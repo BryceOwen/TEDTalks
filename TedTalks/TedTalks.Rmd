@@ -1,0 +1,140 @@
+---
+title: "TedTalks"
+author: "Bryce Owen"
+date: "4/6/2020"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+library(stringr)
+library(tm)
+library(wordcloud)
+library(wesanderson)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(readxl)
+library(tidyr)
+ted <- read_xlsx("/Users/Bryce/DataViz/TedTalks/TED Talks as of 3.29.2018.xlsx")
+colnames(ted)
+```
+
+### Clean the Data
+```{r}
+clean.text <- function(x) {
+    # to lowercase
+    x <- tolower(x)
+    # remove punctuation marks
+    x <- gsub("[[:punct:]]", "", x)
+    # remove numbers
+    x <- gsub("[[:digit:]]", "", x)
+    # remove tabs and extra spaces
+    x <- gsub("[ |\t]{2,}", "", x)
+    # remove blank spaces at the beginning
+    x <- gsub("^ ", "", x)
+    # remove blank spaces at the end
+    x <- gsub(" $", "", x)
+    # result
+    return(x)
+}
+```
+
+### View Number of Speakers by Number of TED Talks
+```{r}
+numtalks <- data.frame(table(ted$speaker_name))
+table(numtalks$Freq)
+```
+2047 speakers have only done one TED Talk whereas one speaker has done a record nine TED Talks
+
+### Get TED Talk Time in Minutes
+
+```{r}
+# Remove the 1899 Date from each duration entry
+ted$duration <- gsub('1899-12-31 ', '', ted$duration)
+# Create function to display talk time in minutes
+ted$TalkTime <- sapply(strsplit(as.character(ted$duration), ":"), function(x) {
+    x <- as.numeric(x)
+    x[1] * 60 + x[2] + x[3]/60
+})
+```
+
+### Establish Mean Time Talked in Frequency and Duration Table
+
+```{r}
+speakfreqandduration <- ted %>% group_by(speaker_name) %>% summarise(NumTalks = n(), 
+    Mean.Talk.Time = mean(TalkTime, na.rm = TRUE)) %>% filter(NumTalks > 
+    2)
+# View talk time stats
+summary(speakfreqandduration$Mean.Talk.Time)
+```
+
+
+### Interactive Table with Speakers, Number of Talks, and Mean Talk Time
+
+```{r}
+
+library(htmlwidgets)
+suppressPackageStartupMessages(library(dplyr))
+library(DT)# if (!require("DT")) install.packages('DT')
+dt=datatable(speakfreqandduration, options=list(pageLength = 15), colnames = c('Speaker Name','Number of Talks','Average Talk Time (min)'))
+dt
+```
+
+
+### Mean Time of Speakers Who Gave More Than 3 Talks
+
+```{r, fig.height=10, fig.width=10}
+gg3 <- ggplot(na.omit(speakfreqandduration), aes(x = reorder(speaker_name, Mean.Talk.Time), 
+    y = Mean.Talk.Time, fill = as.factor(NumTalks))) + geom_bar(stat = "identity") + 
+    xlab("Speaker") + theme_bw() + theme(axis.text.y = element_text(size = 8), plot.title = element_text(hjust = 0.5), 
+    axis.title.y = element_blank()) + coord_flip() + ggtitle("Speakers, Mean Talk Time, and Number of Talks") +guides(fill=guide_legend(title="Number of TED Talks Given")) + ylab("Mean Talk Time (Minutes)")
+
+gg3
+```
+
+### Get Top 20 Tags Using Wordmap Functions and Plot
+```{r}
+#Delineated with spaces instead of commas
+tagCorpus <- Corpus(VectorSource(gsub(","," ",ted$tags)))
+tagStopwords <- c(stopwords("english"), "the")
+
+
+tagCorpus <- tm_map(tagCorpus, removeWords, tagStopwords)
+tdmpremat_tag <- TermDocumentMatrix(tagCorpus)
+tdm_tag <- as.matrix(tdmpremat_tag)
+sortedMatrix_tag <- sort(rowSums(tdm_tag), decreasing = TRUE)
+tdmframe_tag <- data.frame(word = names(sortedMatrix_tag), freq = sortedMatrix_tag)
+
+top_20_tags <- top_n(tdmframe_tag,20)
+
+ggplot(top_20_tags, aes(reorder(word, freq), freq)) + geom_bar(stat='identity') + coord_flip() + xlab("Tag") + ylab("Frequency") + ggtitle("Most Common Video Tags") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+## Extra Non-assigned Graphs and Figures
+
+### Filter Data and Plot Word Cloud of Common Words in TED Talk Titles
+```{r, message = FALSE, warning = FALSE}
+myCorpus <- Corpus(VectorSource(clean.text(ted$headline)))
+myStopwords <- c(stopwords("english"), "ted prize wish")
+
+
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+tdmpremat <- TermDocumentMatrix(myCorpus)
+tdm <- as.matrix(tdmpremat)
+sortedMatrix <- sort(rowSums(tdm), decreasing = TRUE)
+tdmframe <- data.frame(word = names(sortedMatrix), freq = sortedMatrix)
+
+
+# plot words appearing >5 times
+wordcloud(tdmframe$word, tdmframe$freq, random.order = FALSE, random.color = FALSE, 
+    min.freq = 5, scale = c(5, 0.2), colors = wes_palette("Darjeeling1"))
+```
+
+
+### Graph of Speaker Frequency who Gave 3 or More TED Talks
+```{r}
+# Not required for assignment
+gg1 <- ggplot(speakfreqandduration, aes(x = NumTalks, fill = as.factor(NumTalks))) + geom_histogram(binwidth=1) + xlab("Number of talks") + ggtitle("Frequency of Speakers Who Have Given 3 or More Talks") + theme_bw() + theme(legend.position = "none", plot.title = element_text(hjust = 0.5)) + scale_x_continuous(breaks = 1:10)
+gg1
+```

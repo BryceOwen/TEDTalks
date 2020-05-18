@@ -1,0 +1,123 @@
+---
+title: "TedTalks"
+author: "Bryce Owen"
+date: "4/6/2020"
+output: html_document
+---
+```{r}
+knitr::opts_chunk$set(echo = TRUE,message=FALSE, warning=FALSE)
+```
+
+```{r}
+library(stringr)
+library(tm)
+library(wordcloud)
+library(wesanderson)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(readxl)
+library(tidyr)
+library(cluster)
+library(forcats)
+ted <- read_xlsx("/Users/Bryce/DataViz/TedTalks/TED Talks as of 3.29.2018.xlsx")
+colnames(ted)
+```
+
+### Clean the Data
+```{r}
+clean.text <- function(x) {
+    # to lowercase
+    x <- tolower(x)
+    # remove punctuation marks
+    x <- gsub("[[:punct:]]", "", x)
+    # remove numbers
+    x <- gsub("[[:digit:]]", "", x)
+    # remove tabs and extra spaces
+    x <- gsub("[ |\t]{2,}", "", x)
+    # remove blank spaces at the beginning
+    x <- gsub("^ ", "", x)
+    # remove blank spaces at the end
+    x <- gsub(" $", "", x)
+    # result
+    return(x)
+}
+```
+
+### View Number of Speakers by Number of TED Talks
+```{r}
+numtalks <- data.frame(table(ted$speaker_name))
+table(numtalks$Freq)
+```
+2047 speakers have only done one TED Talk whereas one speaker has done a record nine TED Talks
+
+### Get TED Talk Time in Minutes
+
+```{r}
+# Remove the 1899 Date from each duration entry
+ted$duration <- gsub('1899-12-31 ', '', ted$duration)
+# Create function to display talk time in minutes
+ted$TalkTime <- sapply(strsplit(as.character(ted$duration), ":"), function(x) {
+    x <- as.numeric(x)
+    x[1] * 60 + x[2] + x[3]/60
+})
+```
+
+### Establish Mean Time Talked in Frequency and Duration Table
+
+```{r}
+speakfreqandduration <- ted %>% group_by(speaker_name) %>% summarise(NumTalks = n(), 
+    Mean.Talk.Time = mean(TalkTime, na.rm = TRUE)) %>% filter(NumTalks > 
+    3)
+# View talk time stats
+summary(speakfreqandduration$Mean.Talk.Time)
+```
+
+
+### Interactive Table with Speakers, Number of Talks, and Mean Talk Time
+
+```{r}
+
+library(htmlwidgets)
+suppressPackageStartupMessages(library(dplyr))
+library(DT)# if (!require("DT")) install.packages('DT')
+dt=datatable(speakfreqandduration, options=list(pageLength = 15), colnames = c('Speaker Name','Number of Talks','Average Talk Time (min)'))
+dt
+```
+
+
+### Interactive Graph of Speakers Who Gave More Than 3 Talks
+
+```{r, fig.height=10, fig.width=10}
+library(taucharts)
+library(plotly)
+
+gg3 <- ggplot(na.omit(speakfreqandduration), aes(x = reorder(speaker_name, Mean.Talk.Time), 
+    y = Mean.Talk.Time, fill = as.factor(NumTalks))) + geom_bar(stat = "identity") + 
+    xlab("Speaker") + theme_bw() + theme(axis.text.y = element_text(size = 8), plot.title = element_text(hjust = 0.5), 
+    axis.title.y = element_blank()) + coord_flip() + ggtitle("Speakers with more than 3 TED Talks") +guides(fill=guide_legend(title="Number of TED Talks Given")) + ylab("Mean Talk Time (Minutes)")
+
+ggplotly(gg3)
+```
+
+### Get Top 20 Tags Using Wordmap Functions and Plot
+```{r}
+#Delineated with spaces instead of commas
+
+TEDtags <- ted%>%select(tags)%>%separate(tags, c("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10","tag11", "tag12", "tag13", "tag14", "tag15", "tag16", "tag17", "tag18", "tag19", "tag20","tag21", "tag22", "tag23", "tag24", "tag25", "tag26", "tag27", "tag28", "tag29", "tag30","tag31", "tag32", "tag33", "tag34", "tag35", "tag36", "tag37", "tag38", "tag39", "tag40","tag41", "tag42", "tag43", "tag44", "tag45", "tag46", "tag47", "tag48", "tag49", "tag50"), sep = ",")%>% gather(tagnum, Tag, tag1:tag50)%>%filter(Tag != '')
+
+#clean tags and remove beginning and end spaces
+
+TEDtags$Tag<-trimws(TEDtags$Tag)
+TEDtags$Tag<-tolower(TEDtags$Tag)
+
+
+#get tag count and plot with tauchart
+
+tagcount <-TEDtags%>%group_by(Tag)%>%summarise(Tag_count=length(Tag))%>%arrange(-Tag_count)
+
+tagcount$Tag = fct_inorder(tagcount$Tag)
+
+tauchart(tagcount[1:20,])%>%tau_bar('Tag_count','Tag',horizontal = TRUE)%>%tau_legend()%>%tau_tooltip()
+
+```
